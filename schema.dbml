@@ -1,0 +1,222 @@
+// ──────────────────────────────────────────────────────────────────────────
+// Emlak Asistanı — Veritabanı Tasarımı (v1)
+//
+// dbdiagram.io DSL formatı. Görmek için:
+//   1. https://dbdiagram.io/d adresine git
+//   2. Sol kutudaki örnek kodu sil
+//   3. Bu dosyanın TÜM içeriğini yapıştır
+//   4. Sağda diagram otomatik render olur — PNG/PDF olarak export edebilirsin
+//
+// Çoklu firma (Company) + çoklu yayın hedefi (Connector) destekli ilan
+// yönetim platformu. Bir ilan birden fazla yere (WP, sahibinden, hepsiemlak)
+// gönderilebilir; her hedef için ayrı durum izlenir.
+// ──────────────────────────────────────────────────────────────────────────
+
+Project Emlak_Asistani {
+  database_type: 'PostgreSQL'
+  Note: '''
+  Çoklu firma (multi-tenant) + çoklu connector destekli ilan platformu.
+
+  Akış: User → Ad oluşturur → AdImage/AdVideo ekler → birden fazla
+  Connector'a gönderilir → her gönderim için AdConnectorStatus kaydı.
+  '''
+}
+
+// ═════════ ENUM TANIMLARI ═════════
+
+Enum user_role {
+  admin   [note: 'Firma sahibi/yöneticisi']
+  agent   [note: 'Satış danışmanı — ilan oluşturabilir']
+  viewer  [note: 'Sadece görüntüleme']
+}
+
+Enum connector_type {
+  wordpress_houzez
+  sahibinden
+  hepsiemlak
+  emlakjet
+  zingat
+  custom_api
+}
+
+Enum property_type {
+  Apartment
+  Villa
+  Land
+  Commercial
+  Bungalow
+  Hotel
+}
+
+Enum ad_status {
+  draft                [note: 'Hazırlanıyor, henüz gönderilmedi']
+  partially_published  [note: 'Bazı connectorlara gitti, bazılarında fail']
+  fully_published      [note: 'Tüm connectorlarda success']
+  failed               [note: 'Hiçbir connector başaramadı']
+}
+
+Enum connector_status {
+  pending  [note: 'Sırada, henüz denenmedi']
+  success  [note: 'Başarıyla yayınlandı']
+  fail     [note: 'Hata aldı — error_message ve completed_at dolar']
+}
+
+Enum video_source {
+  uploaded      [note: 'Kullanıcı yükledi']
+  ai_generated  [note: 'Fotodan AI ile üretildi']
+}
+
+Enum ai_job_status {
+  queued
+  processing
+  completed
+  failed
+}
+
+// ═════════ TABLOLAR ═════════
+
+Table company {
+  id          bigint    [pk, increment]
+  name        varchar(255)
+  slug        varchar(100)  [unique, note: 'URL-friendly tanımlayıcı']
+  email       varchar(255)
+  phone       varchar(50)
+  logo_url    varchar(500)
+  created_at  timestamp [default: `now()`]
+  updated_at  timestamp
+
+  Note: 'Sistemi kullanan emlak firmaları'
+}
+
+Table app_user {
+  id              bigint    [pk, increment]
+  company_id      bigint    [ref: > company.id, note: 'Hangi firmaya bağlı']
+  email           varchar(255) [unique]
+  password_hash   varchar(255)
+  name            varchar(255)
+  role            user_role
+  last_login_at   timestamp
+  created_at      timestamp [default: `now()`]
+  updated_at      timestamp
+
+  Note: 'Firmada çalışan kullanıcılar (admin/agent/viewer)'
+}
+
+Table connector {
+  id          bigint    [pk, increment]
+  company_id  bigint    [ref: > company.id]
+  type        connector_type
+  name        varchar(255) [note: 'Kullanıcının verdiği etiket, örn: "Ana WP"']
+  config      json      [note: 'URL/API key/secret — ŞİFRELENMİŞ saklanır']
+  is_active   boolean   [default: true]
+  created_at  timestamp [default: `now()`]
+  updated_at  timestamp
+
+  Note: '''
+  Yayın hedefleri. Her firma kendi connectorlarını tanımlar.
+  config örnek: {"url": "https://...", "username": "...", "app_password": "..."}
+  '''
+}
+
+Table ad {
+  id                  bigint    [pk, increment]
+  company_id          bigint    [ref: > company.id]
+  created_by_user_id  bigint    [ref: > app_user.id]
+  title               varchar(500)
+  description         text
+  price               bigint
+  currency            varchar(3) [note: 'TRY | USD | EUR | GBP']
+  property_type       property_type
+  room_count          varchar(20) [note: '3+1, 2+1, stüdyo...']
+  bathroom_count      int
+  net_m2              int
+  gross_m2            int
+  land_m2             int       [note: 'Villa arsa veya daire özel bahçe m²']
+  heating_type        varchar(100)
+  floor               varchar(50)
+  building_age        varchar(50)
+  has_elevator        boolean
+  has_balcony         boolean
+  furnished           boolean
+  in_complex          boolean
+  has_garage          boolean
+  province            varchar(100) [note: 'il']
+  district            varchar(100) [note: 'ilçe']
+  neighborhood        varchar(100) [note: 'mahalle']
+  latitude            decimal(10,7)
+  longitude           decimal(10,7)
+  features            json      [note: 'Houzez/platform-spesifik özellik etiketleri']
+  transcript          text      [note: 'Whisper sesli giriş çıktısı (opsiyonel)']
+  status              ad_status [default: 'draft']
+  created_at          timestamp [default: `now()`]
+  updated_at          timestamp
+
+  Note: 'Tek bir mülk ilanı. Birden çok connectora gönderilebilir.'
+}
+
+Table ad_image {
+  id                  bigint    [pk, increment]
+  ad_id               bigint    [ref: > ad.id]
+  url                 varchar(1000) [note: 'Genelde S3/CDN URL']
+  original_filename   varchar(500)
+  mime_type           varchar(100)
+  width               int
+  height              int
+  file_size           bigint
+  sort_order          int       [default: 0, note: 'Galeri sıralaması']
+  is_main             boolean   [default: false, note: 'Ana foto — sadece 1 tane true']
+  ai_edited           boolean   [default: false]
+  created_at          timestamp [default: `now()`]
+
+  indexes {
+    (ad_id, sort_order)
+  }
+}
+
+Table ad_video {
+  id                  bigint    [pk, increment]
+  ad_id               bigint    [ref: > ad.id]
+  url                 varchar(1000)
+  duration_seconds    int
+  thumbnail_url       varchar(1000)
+  source              video_source
+  created_at          timestamp [default: `now()`]
+}
+
+Table ad_connector_status {
+  id                bigint    [pk, increment]
+  ad_id             bigint    [ref: > ad.id]
+  connector_id      bigint    [ref: > connector.id]
+  status            connector_status [default: 'pending']
+  external_post_id  varchar(255) [note: 'Hedef platformdaki ID (WP post_id, sahibinden ilan no, vb.)']
+  external_url      varchar(1000) [note: 'Yayınlanan ilanin canli URL linki']
+  error_message     text      [note: 'fail olduysa Türkçe açıklama']
+  attempted_at      timestamp [note: 'İlk deneme zamanı']
+  completed_at      timestamp [note: 'Success/fail anı']
+
+  indexes {
+    (ad_id, connector_id) [unique, note: 'Aynı ilanı aynı connectora 1 kez yaz']
+    (status)
+  }
+
+  Note: '''
+  Bir ilanın bir connectora gönderim durumu.
+  Senaryo: 1 ilan, 3 connector → 3 satır oluşur, başta hepsi pending.
+  Yayınlandıkça success'e veya fail'e döner.
+  '''
+}
+
+Table ai_video_job {
+  id              bigint    [pk, increment]
+  ad_id           bigint    [ref: > ad.id]
+  video_id        bigint    [ref: > ad_video.id, note: 'completed olunca dolar']
+  status          ai_job_status [default: 'queued']
+  model           varchar(100) [note: 'runway-gen3 | stable-video-diffusion | ...']
+  prompt          text
+  cost_usd        decimal(8,4)
+  error_message   text
+  created_at      timestamp [default: `now()`]
+  completed_at    timestamp
+
+  Note: 'AI ile foto-video uretme is kuyrugu - LinkedIn ornegindeki gibi'
+}
