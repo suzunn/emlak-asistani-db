@@ -96,3 +96,20 @@ Alternatif: Müşterinin kendi storage'ı (BYOS — Bring Your Own Storage) — 
 - [ ] Billing: Firma başına abonelik tablosu? (`subscription`, `usage_log`)
 - [ ] Audit log: Hangi user neyi ne zaman değiştirdi? (`audit_log` tablosu)
 - [ ] Soft delete: `deleted_at` ekleyelim mi her tabloya?
+
+## Üretime Geçiş Kontrol Listesi
+
+Bu repo kavramsal veri modelini tanımlar. Migration hazırlarken aşağıdaki kurallar
+veritabanı seviyesinde ayrıca uygulanmalıdır:
+
+- [ ] Her sorguda tenant sınırını korumak için `company_id` alanlarına index ekle.
+- [ ] `ad.created_by_user_id` kullanıcısının aynı `company_id` değerine sahip
+      olduğunu doğrula.
+- [ ] `ad_connector_status` kaydındaki ilan ve connector'ın aynı firmaya ait
+      olduğunu doğrula.
+- [ ] Bir ilanda yalnızca bir görselin `is_main = true` olmasını partial unique
+      index ile sınırla.
+- [ ] `connector.config` içindeki gizli bilgileri uygulama katmanında şifrele;
+      düz metin API anahtarı saklama.
+- [ ] Retry sırasında mevcut `ad_connector_status` kaydını güncellemek yerine
+      gönderim geçmişini ayrı bir tablo veya audit log ile koru.
