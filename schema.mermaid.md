@@ -43,7 +43,7 @@ erDiagram
     connector {
         bigint id PK
         bigint company_id FK
-        enum type "wordpress_houzez|sahibinden|hepsiemlak|emlakjet|custom"
+        enum type "wordpress_houzez|sahibinden|hepsiemlak|emlakjet|zingat|custom_api"
         varchar name
         json config "şifrelenmiş URL/key"
         boolean is_active
@@ -59,7 +59,7 @@ erDiagram
         text description
         bigint price
         varchar currency "TRY|USD|EUR|GBP"
-        enum property_type "Apartment|Villa|Land|..."
+        enum property_type "Apartment|Villa|Land|Commercial|Bungalow|Hotel"
         varchar room_count "3+1"
         int bathroom_count
         int net_m2

@@ -78,6 +78,17 @@ Alternatif: Müşterinin kendi storage'ı (BYOS — Bring Your Own Storage) — 
 - **[schema.dbml](schema.dbml)** — dbdiagram.io'da açılır, görsel diyagram üretir
 - **[schema.mermaid.md](schema.mermaid.md)** — Mermaid ER diyagramı (GitHub/Notion'da render olur)
 
+## Schema Validation
+
+Run the lightweight schema checks before editing the model:
+
+```bash
+npm test
+```
+
+The test suite verifies DBML references, tenant-scoped tables, publication status
+invariants, and Mermaid enum values against the source DBML schema.
+
 ## 🔄 dbdiagram.io'da Nasıl Görselleştirilir?
 
 1. https://dbdiagram.io/d adresine git
